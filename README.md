@@ -13,7 +13,7 @@ A lightweight PHP framework focusing on simplicity and flexibility. It provides 
 
 ### Installation
 ```bash
-composer require lawrence72/koala
+composer require lawrence72/koala-framework
 ```
 
 ### Basic Setup
