@@ -1,0 +1,26 @@
+{
+	"name": "lawrence72/koala-framework",
+	"description": "A simple PHP framework",
+	"type": "library",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "Lawrence Cooke",
+			"email": "dev@koalacreek.net"
+		}
+	],
+	"minimum-stability": "stable",
+	"autoload": {
+		"psr-4": {
+			"Koala\\": "src/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"Koala\\Tests\\": "tests/"
+		}
+	},
+	"require": {
+		"php": ">=8.0"
+	}
+}
