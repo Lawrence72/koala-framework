@@ -3,6 +3,7 @@
 namespace Koala\Database;
 
 use Koala\Config\Config;
+use Koala\Utils\Collection;
 use PDO;
 use PDOException;
 use PDOStatement;
@@ -83,42 +84,42 @@ class Database
      * 
      * @param string $sql 
      * @param array $params 
-     * @return null|array 
+     * @return null|Collection 
      * @throws RuntimeException 
      * @throws PDOException 
      */
-    public function fetchField(string $sql, array $params = []) : ?array
+    public function fetchField(string $sql, array $params = []) : ?Collection
     {
         $result = $this->fetchRow($sql, $params);
-        return $result ? reset($result) : null;
+        return $result ? new Collection(reset($result)) : null;
     }
 
     /**
      * 
      * @param string $sql 
      * @param array $params 
-     * @return array|null 
+     * @return Collection|null 
      */
-    public function fetchRow(string $sql, array $params = []): ?array
+    public function fetchRow(string $sql, array $params = []): ?Collection
     {
         if (stripos($sql, 'LIMIT') === false) {
             $sql .= ' LIMIT 1';
         }
         $statement = $this->runQuery($sql, $params);
         $result = $statement->fetch();
-        return $result ?: null;
+        return new Collection($result) ?: null;
     }
 
     /**
      * 
      * @param string $sql 
      * @param array $params 
-     * @return array 
+     * @return Collection 
      */
-    public function fetchAll(string $sql, array $params = []): array
+    public function fetchAll(string $sql, array $params = []): Collection
     {
         $statement = $this->runQuery($sql, $params);
-        return $statement->fetchAll();
+        return new Collection($statement->fetchAll());
     }
 
     /**
