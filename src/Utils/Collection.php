@@ -4,8 +4,9 @@ namespace Koala\Utils;
 
 use ArrayAccess;
 use Iterator;
+use JsonSerializable;
 
-class Collection implements ArrayAccess, Iterator
+class Collection implements ArrayAccess, Iterator, JsonSerializable
 {
 	protected array $data;
 
@@ -124,5 +125,13 @@ class Collection implements ArrayAccess, Iterator
 	public function valid(): bool
 	{
 		return key($this->data) !== null;
+	}
+
+	/**
+	 * @return array
+	 */
+	public function jsonSerialize(): array
+	{
+		return $this->data;
 	}
 }
