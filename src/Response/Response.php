@@ -2,6 +2,8 @@
 
 namespace Koala\Response;
 
+use Koala\Utils\Collection;
+
 class Response
 {
     protected static string $view_engine = SimpleResponse::class;
@@ -36,12 +38,15 @@ class Response
 
     /**
      * 
-     * @param array $data 
+     * @param array|Collection $data 
      * @param int $status 
      * @return JsonResponse 
      */
-    public function json(array $data, int $status = 200): JsonResponse
+    public function json(array|Collection $data, int $status = 200): JsonResponse
     {
+        if ($data instanceof Collection) {
+            $data = $data->jsonSerialize();
+        }
         return new JsonResponse($data, $status);
     }
 }
