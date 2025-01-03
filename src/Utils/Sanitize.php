@@ -17,6 +17,8 @@ class Sanitize
 
 		if (is_string($data)) {
 			return $this->cleanStrings($data, $allowed_tags, $encoding);
+		} elseif ($data instanceof Collection) {
+			return $this->cleanCollection($data, $allowed_tags, $encoding);
 		} elseif (is_array($data)) {
 			return $this->cleanArray($data, $allowed_tags, $encoding);
 		} elseif (is_object($data)) {
@@ -39,6 +41,15 @@ class Sanitize
 		return !empty($encoding) ?
 			$this->encodeString($cleaned_data, $encoding) :
 			$cleaned_data;
+	}
+
+	protected function cleanCollection(Collection $data, array $allowed_tags = [], $encoding = 'UTF-8')
+	{
+		$cleaned_data = [];
+		foreach ($data as $key => $value) {
+			$cleaned_data[$key] = $this->clean($value, $allowed_tags, $encoding);
+		}
+		return new Collection($cleaned_data);
 	}
 
 	protected function cleanStringWithTags($data, array $allowed_tags = [], $encoding = 'UTF-8')
