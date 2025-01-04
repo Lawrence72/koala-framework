@@ -2,24 +2,22 @@
 
 namespace Koala\Request;
 
-use Koala\Utils\Collection;
-
 class Request
 {
-    protected Collection $get;
-    protected Collection $post;
-    protected Collection $server;
-    protected ?Collection $json = null;
+    protected array $get;
+    protected array $post;
+    protected array $server;
+    protected ?array $json = null;
 
     public function __construct()
     {
-        $this->get = new Collection($_GET ?? []);
-        $this->post = new Collection($_POST ?? []);
-        $this->server = new Collection($_SERVER ?? []);
+        $this->get = $_GET;
+        $this->post = $_POST;
+        $this->server = $_SERVER;
 
         if ($this->isJson()) {
             $input = file_get_contents('php://input');
-            $this->json = new Collection(json_decode($input, true) ?? []);
+            $this->json = json_decode($input, true);
         }
     }
 

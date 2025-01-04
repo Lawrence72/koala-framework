@@ -2,12 +2,11 @@
 
 namespace Koala\Database;
 
-use Koala\Config\Config;
-use Koala\Utils\Collection;
 use PDO;
 use PDOException;
 use PDOStatement;
 use RuntimeException;
+use Koala\Config\Config;
 
 class Database
 {
@@ -73,7 +72,7 @@ class Database
      * @throws RuntimeException 
      * @throws PDOException 
      */
-    public function runQuery(string $sql, array $params = []): \PDOStatement
+    public function runQuery(string $sql, array $params = []): PDOStatement
     {
         $statement = $this->getConnection()->prepare($sql);
         $statement->execute($params);
@@ -84,42 +83,41 @@ class Database
      * 
      * @param string $sql 
      * @param array $params 
-     * @return null|Collection 
+     * @return mixed 
      * @throws RuntimeException 
      * @throws PDOException 
      */
-    public function fetchField(string $sql, array $params = []) : ?Collection
+    public function fetchField(string $sql, array $params = []): mixed
     {
         $result = $this->fetchRow($sql, $params);
-        return $result ? new Collection(reset($result)) : null;
+        return $result ? reset($result) : null;
     }
 
     /**
      * 
      * @param string $sql 
      * @param array $params 
-     * @return Collection|null 
+     * @return array|null 
      */
-    public function fetchRow(string $sql, array $params = []): ?Collection
+    public function fetchRow(string $sql, array $params = []): ?array
     {
         if (stripos($sql, 'LIMIT') === false) {
             $sql .= ' LIMIT 1';
         }
         $statement = $this->runQuery($sql, $params);
-        $result = $statement->fetch();
-        return new Collection($result) ?: null;
+        return $statement->fetch() ?: null;
     }
 
     /**
      * 
      * @param string $sql 
      * @param array $params 
-     * @return Collection 
+     * @return array 
      */
-    public function fetchAll(string $sql, array $params = []): Collection
+    public function fetchAll(string $sql, array $params = []): array
     {
         $statement = $this->runQuery($sql, $params);
-        return new Collection($statement->fetchAll());
+        return $statement->fetchAll();
     }
 
     /**
