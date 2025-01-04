@@ -7,6 +7,7 @@ use PDOException;
 use PDOStatement;
 use RuntimeException;
 use Koala\Config\Config;
+use Koala\Utils\Collection;
 
 class Database
 {
@@ -89,7 +90,8 @@ class Database
      */
     public function fetchField(string $sql, array $params = []): mixed
     {
-        $result = $this->fetchRow($sql, $params);
+        $statement = $this->runQuery($sql, $params);
+        $result = $statement->fetch(PDO::FETCH_ASSOC);
         return $result ? reset($result) : null;
     }
 
@@ -97,15 +99,15 @@ class Database
      * 
      * @param string $sql 
      * @param array $params 
-     * @return array|null 
+     * @return Collection|null 
      */
-    public function fetchRow(string $sql, array $params = []): ?array
+    public function fetchRow(string $sql, array $params = []): ?Collection
     {
         if (stripos($sql, 'LIMIT') === false) {
             $sql .= ' LIMIT 1';
         }
-        $statement = $this->runQuery($sql, $params);
-        return $statement->fetch() ?: null;
+        $results = $this->fetchAll($sql, $params);
+        return $results ? $results[0] : null;
     }
 
     /**
@@ -117,7 +119,17 @@ class Database
     public function fetchAll(string $sql, array $params = []): array
     {
         $statement = $this->runQuery($sql, $params);
-        return $statement->fetchAll();
+
+        $results = $statement->fetchAll();
+
+        if (empty($results)) {
+            return [];
+        }
+
+        foreach ($results as &$result) {
+            $result = new Collection($result);
+        }
+        return $results;
     }
 
     /**

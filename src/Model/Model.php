@@ -3,11 +3,12 @@
 namespace Koala\Model;
 
 use Koala\Application;
+use Koala\Utils\Collection;
 use RuntimeException;
 
 class Model
 {
-	protected array $data = [];
+	protected array|Collection $data = [];
 	protected array $modified_fields = [];
 	protected string $table_name = '';
 	protected string $primary_key = 'id';
@@ -163,10 +164,10 @@ class Model
 
 	/**
 	 * 
-	 * @return array 
+	 * @return Collection|array|null 
 	 * @throws RuntimeException 
 	 */
-	public function execute() :array
+	public function execute(): Collection|array|null
 	{
 		if ($this->query_type === null) {
 			throw new \RuntimeException('Must call either load() or find() before execute()');
