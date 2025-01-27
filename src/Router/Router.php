@@ -59,16 +59,16 @@ class Router implements RouterInterface
         }
 
         $pattern = preg_replace_callback(
-            '/@(\w+)(\[([^\]]+)\])?/',
+            '/@(\w+):?(\[([^\]]+)\])?/',
             function ($matches) {
                 $param_name = $matches[1];
                 $regex_pattern = $matches[3] ?? '[^/]+';
-                return "(?P<{$param_name}>" . ($regex_pattern === '0-9' ? '\d+' : $regex_pattern) . ")";
+                return "(?P<{$param_name}>" . $regex_pattern . ")";
             },
             $path
         );
 
-        $pattern = '^' . ltrim($pattern, '/') . '$';
+        $pattern = '^' . ltrim($pattern, '/') . '/?$';
         $route_info = [
             'controller' => $controller_class,
             'action' => $action,
