@@ -21,6 +21,7 @@ class Application
     protected Response $response;
     protected Container $container;
     protected Config $config;
+    protected array $storage = [];
 
     public function __construct()
     {
@@ -88,13 +89,41 @@ class Application
     }
 
     /**
-     * 
      * @param string $key 
      * @return mixed 
      */
     public function getConfig(string $key): mixed
     {
         return $this->config->get($key);
+    }
+
+    /**
+     * @param string $key 
+     * @param mixed $value 
+     * @return Application 
+     */
+    public function set(string $key, mixed $value): self
+    {
+        $this->storage[$key] = $value;
+        return $this;
+    }
+
+    /**
+     * @param string $key 
+     * @return mixed 
+     */
+    public function get(string $key): mixed
+    {
+        return $this->storage[$key] ?? null;
+    }
+
+    /**
+     * @param string $key 
+     * @return bool 
+     */
+    public function has(string $key): bool
+    {
+        return isset($this->storage[$key]);
     }
 
 

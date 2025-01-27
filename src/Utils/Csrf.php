@@ -34,4 +34,9 @@ class Csrf
 
 		return $valid_token;
 	}
+
+	public function getToken(): string
+	{
+		return $this->session->get('csrf_token');
+	}
 }
