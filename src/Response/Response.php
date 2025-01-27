@@ -49,4 +49,9 @@ class Response
         }
         return new JsonResponse($data, $status);
     }
+
+    public function redirect(string $url, int $status = 302): RedirectResponse
+    {
+        return new RedirectResponse($url, $status);
+    }
 }
