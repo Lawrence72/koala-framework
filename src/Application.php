@@ -87,6 +87,16 @@ class Application
         $this->container->bind(Session::class, $session);
     }
 
+    /**
+     * 
+     * @param string $key 
+     * @return mixed 
+     */
+    public function getConfig(string $key): mixed
+    {
+        return $this->config->get($key);
+    }
+
 
     /**
      * 
