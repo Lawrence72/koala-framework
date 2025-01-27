@@ -16,11 +16,10 @@ class JsonResponse implements ResponseInterface
 	public function send(): void
 	{
 		header('Content-Type: application/json');
-		http_response_code($this->status);
-		echo json_encode([
-			'status' => $this->status,
-			'data' => $this->data
-		]);
+		$status = $this->data['status'] ?? $this->status;
+		$this->data['status'] = $status;
+		http_response_code($status);
+		echo json_encode($this->data);
 	}
 
 	/**
