@@ -66,6 +66,18 @@ class Database
     }
 
     /**
+     *
+     * @param string $name Method name
+     * @param array $arguments Method arguments
+     * @return mixed
+     * @throws RuntimeException
+     */
+    public function __call($name, $arguments)
+    {
+        return $this->getConnection()->$name(...$arguments);
+    }
+
+    /**
      * 
      * @param string $sql 
      * @param array $params 
