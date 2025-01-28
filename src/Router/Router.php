@@ -59,7 +59,7 @@ class Router implements RouterInterface
         }
 
         $pattern = preg_replace_callback(
-            '#@(\w+):([^/]+)#',
+            '#@(\w+)(?::([^/]+))?#',
             function ($matches) {
                 $param_name = $matches[1];
                 $regex_pattern = $matches[2] ?? '[^/]+';
