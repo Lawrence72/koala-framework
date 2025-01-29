@@ -146,30 +146,41 @@ class Collection implements ArrayAccess, Iterator, Countable, JsonSerializable
 	}
 
 	/**
-	 * @param string $key
+	 * @param string $name
 	 * @return bool
 	 */
-	public function has(string $key): bool
+	public function __isset(string $name): bool
 	{
-		return isset($this->data[$key]) && $this->data[$key] !== '';
-	}
+		if (!isset($this->data[$name])) {
+			return false;
+		}
 
-	/**
-	 * @param string $key
-	 * @return bool
-	 */
-	public function isEmpty(string $key): bool
-	{
-		return !isset($this->data[$key]) || $this->data[$key] === '';
-	}
+		$value = $this->data[$name];
 
-	/**
-	 * @param string $key
-	 * @param mixed $default
-	 * @return mixed
-	 */
-	public function get(string $key, mixed $default = null): mixed
-	{
-		return $this->data[$key] ?? $default;
+		if ($value === null) {
+			return false;
+		}
+
+		if (is_string($value)) {
+			return $value !== '' && $value !== '0';
+		}
+
+		if (is_numeric($value)) {
+			return $value != 0;
+		}
+
+		if (is_bool($value)) {
+			return $value;
+		}
+
+		if (is_array($value)) {
+			return !empty($value);
+		}
+
+		if (is_object($value) && $value instanceof Countable) {
+			return count($value) > 0;
+		}
+
+		return true;
 	}
 }
