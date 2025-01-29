@@ -3,10 +3,11 @@
 namespace Koala\Utils;
 
 use ArrayAccess;
+use Countable;
 use Iterator;
 use JsonSerializable;
 
-class Collection implements ArrayAccess, Iterator, JsonSerializable
+class Collection implements ArrayAccess, Iterator, Countable, JsonSerializable
 {
 	protected array $data;
 
@@ -133,5 +134,14 @@ class Collection implements ArrayAccess, Iterator, JsonSerializable
 	public function jsonSerialize(): array
 	{
 		return $this->data;
+	}
+
+	/**
+	 * 
+	 * @return int 
+	 */
+	public function count(): int
+	{
+		return count($this->data);
 	}
 }

@@ -19,7 +19,9 @@ class Request
 
         if ($this->isJson()) {
             $input = file_get_contents('php://input');
-            $this->json = new Collection(json_decode($input, true) ?? []);
+            $decoded = json_decode($input, true) ?? [];
+            $jsonData = $decoded['data'] ?? $decoded;
+            $this->json = new Collection($jsonData);
         }
     }
 
@@ -33,13 +35,12 @@ class Request
         return $this->get[$key] ?? $default;
     }
 
-
     /**
-     * @return mixed
+     * @return Collection
      */
-    public function getQueryParams(): mixed
+    public function getQueryParams(): Collection
     {
-        return $this->get ?? [];
+        return $this->get;
     }
 
     /**
@@ -53,11 +54,11 @@ class Request
     }
 
     /**
-     * @return mixed
+     * @return Collection
      */
-    public function getPostParams(): mixed
+    public function getPostParams(): Collection
     {
-        return $this->post ?? [];
+        return $this->post;
     }
 
     /**
@@ -71,24 +72,24 @@ class Request
     }
 
     /**
-     * @return mixed
+     * @return Collection|null
      */
-    public function getJsonParams(): mixed
+    public function getJsonParams(): ?Collection
     {
-        return $this->json ?? [];
+        return $this->json;
     }
 
     /**
-     * @return array
+     * @return Collection
      */
-    public function getAll(): array
+    public function getAll(): Collection
     {
         if ($this->getMethod() === 'GET') {
             return $this->get;
         }
 
         if ($this->isJson()) {
-            return $this->json ?? [];
+            return $this->json ?? new Collection([]);
         }
 
         return $this->post;
