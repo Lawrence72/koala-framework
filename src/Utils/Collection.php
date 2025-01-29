@@ -144,4 +144,32 @@ class Collection implements ArrayAccess, Iterator, Countable, JsonSerializable
 	{
 		return count($this->data);
 	}
+
+	/**
+	 * @param string $key
+	 * @return bool
+	 */
+	public function has(string $key): bool
+	{
+		return isset($this->data[$key]) && $this->data[$key] !== '';
+	}
+
+	/**
+	 * @param string $key
+	 * @return bool
+	 */
+	public function isEmpty(string $key): bool
+	{
+		return !isset($this->data[$key]) || $this->data[$key] === '';
+	}
+
+	/**
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public function get(string $key, mixed $default = null): mixed
+	{
+		return $this->data[$key] ?? $default;
+	}
 }
