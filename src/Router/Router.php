@@ -24,18 +24,27 @@ class Router implements RouterInterface
      * 
      * @param string $path 
      * @param callable $callback 
-     * @param array $options 
+     * @param array $middleware 
      * @return void 
      */
-    public function group(string $path, callable $callback, array $options = []): void
+    public function group(string $path, callable $callback, array $middleware = []): void
     {
         $previous_group = $this->current_group;
+
+        // Flatten any nested arrays in middleware
+        $flattened_middleware = [];
+        foreach ($middleware as $m) {
+            if (is_array($m)) {
+                $flattened_middleware = array_merge($flattened_middleware, $m);
+            } else {
+                $flattened_middleware[] = $m;
+            }
+        }
 
         $this->current_group = array_merge($previous_group, [
             'path' => ($previous_group['path'] ?? '') . $path,
             'middleware' => array_merge(
-                $previous_group['middleware'] ?? [],
-                $options['middleware'] ?? []
+                $previous_group['middleware'] ?? [], $flattened_middleware
             )
         ]);
 
@@ -80,13 +89,13 @@ class Router implements RouterInterface
         $this->routes[$method][$pattern] = $route_info;
     }
 
-   /**
-    * 
-    * @param string $method 
-    * @param string $path 
-    * @return mixed 
-    * @throws RuntimeException 
-    */
+    /**
+     * 
+     * @param string $method 
+     * @param string $path 
+     * @return mixed 
+     * @throws RuntimeException 
+     */
     public function dispatch(string $method, string $path): mixed
     {
         $path = ltrim($path, '/');
@@ -143,47 +152,40 @@ class Router implements RouterInterface
                 if (!empty($route['middleware'])) {
                     $stack = $controller_action;
 
-                    foreach (array_reverse($route['middleware']) as $middleware) {
-
-                        if (is_array($middleware) && count($middleware) === 2) {
-                            [$middleware_class, $middleware_method] = $middleware;
-
-                            if (!class_exists($middleware_class)) {
-                                throw new \RuntimeException("Middleware class '$middleware_class' not found");
-                            }
-
-                            $middleware_instance = $this->container->get($middleware_class);
-
-                            if (!$middleware_instance) {
-                                
-                                $reflection = new \ReflectionClass($middleware_class);
-                                $constructor = $reflection->getConstructor();
-
-                                if ($constructor) {
-                                    $params = [];
-                                    foreach ($constructor->getParameters() as $param) {
-
-                                        $param_class = $param->getType()->getName();
-                                        $dependency = $this->container->get($param_class);
-                                        
-                                        if (!$dependency && !$param->isOptional()) {
-                                            throw new \RuntimeException("Could not find dependency {$param_class} for middleware {$middleware_class}");
-                                        }
-                                        $params[] = $dependency;
-                                    }
-                                    $middleware_instance = new $middleware_class(...$params);
-                                } else {
-                                    $middleware_instance = new $middleware_class();
-                                }
-                            }
-
-                            if (!method_exists($middleware_instance, $middleware_method)) {
-                                throw new \RuntimeException("Middleware method '$middleware_method' not found in class '$middleware_class'");
-                            }
-
-                            $current_stack = $stack;
-                            $stack = fn() => $middleware_instance->$middleware_method($request, $current_stack);
+                    foreach ($route['middleware'] as $middleware_class) {
+                        if (!class_exists($middleware_class)) {
+                            throw new \RuntimeException("Middleware class '$middleware_class' not found");
                         }
+
+                        $middleware_instance = $this->container->get($middleware_class);
+
+                        if (!$middleware_instance) {
+                            $reflection = new \ReflectionClass($middleware_class);
+                            $constructor = $reflection->getConstructor();
+
+                            if ($constructor) {
+                                $params = [];
+                                foreach ($constructor->getParameters() as $param) {
+                                    $param_class = $param->getType()->getName();
+                                    $dependency = $this->container->get($param_class);
+
+                                    if (!$dependency && !$param->isOptional()) {
+                                        throw new \RuntimeException("Could not find dependency {$param_class} for middleware {$middleware_class}");
+                                    }
+                                    $params[] = $dependency;
+                                }
+                                $middleware_instance = new $middleware_class(...$params);
+                            } else {
+                                $middleware_instance = new $middleware_class();
+                            }
+                        }
+
+                        if (!method_exists($middleware_instance, 'handle')) {
+                            throw new \RuntimeException("Middleware method 'handle' not found in class '$middleware_class'");
+                        }
+
+                        $current_stack = $stack;
+                        $stack = fn() => $middleware_instance->handle($request, $current_stack);
                     }
 
                     $response = $stack();
