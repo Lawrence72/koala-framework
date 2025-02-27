@@ -4,10 +4,16 @@ namespace Koala\Database;
 
 use PDO;
 use PDOException;
-use PDOStatement;
 use RuntimeException;
 use Koala\Config\Config;
 use Koala\Utils\Collection;
+
+enum QueryReturnType: string
+{
+    case All = 'all';
+    case Row = 'row';
+    case Field = 'field';
+}
 
 class Database
 {
@@ -78,15 +84,25 @@ class Database
     }
 
     /**
-     * 
      * @param string $sql 
      * @param array $params 
-     * @return PDOStatement 
+     * @param QueryReturnType|null $returnType
+     * @return mixed 
      * @throws RuntimeException 
-     * @throws PDOException 
      */
-    public function runQuery(string $sql, array $params = []): PDOStatement
-    {
+    public function runQuery(
+        string $sql,
+        array $params = [],
+        ?QueryReturnType $returnType = null
+    ): mixed {
+        if ($returnType !== null) {
+            return match ($returnType) {
+                QueryReturnType::All => $this->fetchAll($sql, $params),
+                QueryReturnType::Row => $this->fetchRow($sql, $params),
+                QueryReturnType::Field => $this->fetchField($sql, $params),
+            };
+        }
+
         $statement = $this->getConnection()->prepare($sql);
         $statement->execute($params);
         return $statement;
