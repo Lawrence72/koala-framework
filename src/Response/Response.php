@@ -54,4 +54,9 @@ class Response
     {
         return new RedirectResponse($url, $status);
     }
+
+    public function generic(string $content = '', int $status = 200): GenericResponse
+    {
+        return new GenericResponse($content, $status);
+    }
 }
