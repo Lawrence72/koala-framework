@@ -22,6 +22,7 @@ class Application
     protected Container $container;
     protected Config $config;
     protected array $storage = [];
+    protected bool $isCliMode = false;
 
     public function __construct()
     {
@@ -32,7 +33,7 @@ class Application
     }
 
     /**
-     * 
+     * Start the application for web requests
      * @param string $config_path 
      * @return void 
      */
@@ -52,6 +53,48 @@ class Application
         } catch (\Throwable $e) {
             $this->handleError($e);
         }
+    }
+
+    /**
+     * Start the application for CLI usage
+     * @param string $config_path 
+     * @return void 
+     */
+    public function startCli(string $config_path): void
+    {
+        $this->isCliMode = true;
+        
+        // Load configuration
+        $this->config = Config::getInstance();
+        $this->config->load($config_path);
+
+        // Bind core services to container
+        $this->container->bind('config', $this->config);
+        $this->container->bind(\Koala\Application::class, $this);
+        
+        // Initialize database (but don't create it yet, let it be lazy-loaded)
+        // The createDatabase() method will handle this when needed
+        
+        // Note: We don't initialize Request/Response for CLI as they're HTTP-specific
+        // Controllers running in CLI mode should handle this gracefully
+    }
+
+    /**
+     * Get the dependency injection container
+     * @return Container 
+     */
+    public function getContainer(): Container
+    {
+        return $this->container;
+    }
+
+    /**
+     * Check if running in CLI mode
+     * @return bool 
+     */
+    public function isCliMode(): bool
+    {
+        return $this->isCliMode;
     }
 
     /**
@@ -84,6 +127,11 @@ class Application
 
     public function createSession(): void
     {
+        // Skip session creation in CLI mode
+        if ($this->isCliMode) {
+            return;
+        }
+        
         $session = new Session();
         $this->container->bind(Session::class, $session);
     }
@@ -128,12 +176,18 @@ class Application
 
 
     /**
-     * 
+     * Handle errors differently for CLI vs web
      * @param Throwable $e 
      * @return void 
      */
     protected function handleError(\Throwable $e): void
     {
+        if ($this->isCliMode) {
+            // For CLI, just throw the exception to be handled by the calling script
+            throw $e;
+        }
+        
+        // For web requests, send JSON response
         $code = (int)($e->getCode()) ?: 500;
         $response = new JsonResponse(
             ['error' => $e->getMessage()],
@@ -152,8 +206,8 @@ class Application
     {
         return match ($name) {
             'Router' => $this->getRouter(),
-            'request' => $this->request,
-            'response' => $this->response,
+            'request' => $this->isCliMode ? null : $this->request,
+            'response' => $this->isCliMode ? null : $this->response,
             'Database', 'database' => $this->createDatabase(),
             default => throw new \RuntimeException("Property $name not found"),
         };
