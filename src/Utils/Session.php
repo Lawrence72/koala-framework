@@ -4,81 +4,137 @@ namespace Koala\Utils;
 
 class Session
 {
+    protected ?string $encryptionKey = null;
 
-	protected $encryption_key;
+    public function __construct(?string $sessionName = null, ?string $encryptionKey = null)
+    {
+        $this->encryptionKey = $encryptionKey;
 
-	public function __construct(string $session_name = null, $encryption_key = null)
-	{
-		$this->encryption_key = $encryption_key;
-		if (!empty($session_name)) {
-			$this->setSessionName($session_name);
-		}
-		self::start();
-	}
+        if ($sessionName !== null && $sessionName !== '') {
+            $this->setSessionName($sessionName);
+        }
 
-	public function setSessionName(string $session_name)
-	{
-		session_name($session_name);
-	}
+        self::start();
+    }
 
-	public static function start()
-	{
-		if (session_status() == PHP_SESSION_NONE) {
-			session_start();
-		}
-	}
+    public function setSessionName(string $sessionName): void
+    {
+        if (session_status() !== PHP_SESSION_NONE) {
+            throw new \RuntimeException('Cannot change session name after session has started');
+        }
+        session_name($sessionName);
+    }
 
-	public function set(string $key, $value)
-	{
-		$_SESSION[$key] = !empty($this->encryption_key) ? $this->encrypt($value) : $value;
-	}
+    public static function start(): void
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+    }
 
-	public function get(string $key)
-	{
-		return $this->has($key) ? (!empty($this->encryption_key) ? $this->decrypt($_SESSION[$key]) : $_SESSION[$key]) : null;
-	}
+    public function set(string $key, mixed $value): void
+    {
+        $_SESSION[$key] = $this->encryptionKey !== null ? $this->encrypt($value) : $value;
+    }
 
-	public function has(string $key)
-	{
-		return array_key_exists($key, $_SESSION);
-	}
+    public function get(string $key): mixed
+    {
+        if (!$this->has($key)) {
+            return null;
+        }
 
-	public function remove(string $key)
-	{
-		if ($this->has($key)) {
-			unset($_SESSION[$key]);
-		}
-	}
+        return $this->encryptionKey !== null ? $this->decrypt($_SESSION[$key]) : $_SESSION[$key];
+    }
 
-	public function destroy()
-	{
-		session_destroy();
-	}
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $_SESSION);
+    }
 
-	public function setFlash($text, $type)
-	{
-		if (!$this->has('koala_flash') || !is_array($this->get('koala_flash'))) {
-			$this->set('koala_flash', []);
-		}
-		$koala_flash = $this->get('koala_flash');
-		$koala_flash[] = ['message' => $text, 'type' => $type];
-		$this->set('koala_flash', $koala_flash);
-	}
+    public function remove(string $key): void
+    {
+        if ($this->has($key)) {
+            unset($_SESSION[$key]);
+        }
+    }
 
-	public function getFlash()
-	{
-		$flash =  $this->has('koala_flash') ? $this->get('koala_flash') : [];
-		$this->remove('koala_flash');
-		return $flash;
-	}
+    public function destroy(): void
+    {
+        session_destroy();
+    }
 
-	protected function encrypt($value)
-	{
-		return openssl_encrypt($value, 'AES-256-CBC', $this->encryption_key, 0, substr($this->encryption_key, 0, 16));
-	}
+    public function setFlash(string $text, string $type): void
+    {
+        if (!$this->has('koalaFlash') || !is_array($this->get('koalaFlash'))) {
+            $this->set('koalaFlash', []);
+        }
 
-	protected function decrypt($value)
-	{
-		return openssl_decrypt($value, 'AES-256-CBC', $this->encryption_key, 0, substr($this->encryption_key, 0, 16));
-	}
+        $koalaFlash = $this->get('koalaFlash');
+        $koalaFlash[] = ['message' => $text, 'type' => $type];
+        $this->set('koalaFlash', $koalaFlash);
+    }
+
+    public function getFlash(): array
+    {
+        $flash = $this->has('koalaFlash') ? $this->get('koalaFlash') : [];
+        $this->remove('koalaFlash');
+        return $flash;
+    }
+
+    /**
+     * Encrypt a value using AES-256-CBC with random IV
+     */
+    protected function encrypt(mixed $value): string
+    {
+        if ($this->encryptionKey === null) {
+            throw new \RuntimeException('Encryption key not set');
+        }
+        
+        $serialized = serialize($value);
+
+        $iv = random_bytes(16);
+
+        $encrypted = openssl_encrypt($serialized, 'AES-256-CBC', $this->encryptionKey, OPENSSL_RAW_DATA, $iv);
+
+        if ($encrypted === false) {
+            throw new \RuntimeException('Encryption failed');
+        }
+
+        return base64_encode($iv . $encrypted);
+    }
+
+    /**
+     * Decrypt a value encrypted with encrypt()
+     */
+    protected function decrypt(string $encryptedValue): mixed
+    {
+        if ($this->encryptionKey === null) {
+            throw new \RuntimeException('Encryption key not set');
+        }
+
+        $data = base64_decode($encryptedValue);
+
+        if ($data === false || strlen($data) < 16) {
+            throw new \RuntimeException('Invalid encrypted data');
+        }
+
+        $iv = substr($data, 0, 16);
+        $encrypted = substr($data, 16);
+
+        $decrypted = openssl_decrypt($encrypted, 'AES-256-CBC', $this->encryptionKey, OPENSSL_RAW_DATA, $iv);
+
+        if ($decrypted === false) {
+            throw new \RuntimeException('Decryption failed');
+        }
+
+        return unserialize($decrypted);
+    }
+
+    /**
+     * Regenerate session ID for security
+     */
+    public function regenerateId(bool $deleteOldSession = true): void
+    {
+        session_regenerate_id($deleteOldSession);
+    }
 }

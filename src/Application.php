@@ -5,7 +5,7 @@ namespace Koala;
 use Koala\Router\Router;
 use Koala\Response\JsonResponse;
 use Koala\Response\Response;
-use Koala\Database\Database;
+use Koala\Database\DatabaseManager;
 use Koala\Request\Request;
 use Koala\Container\Container;
 use Koala\Config\Config;
@@ -16,7 +16,7 @@ use Throwable;
 class Application
 {
     protected Router $router;
-    protected ?Database $db = null;
+    protected ?DatabaseManager $db = null;
     protected Request $request;
     protected Response $response;
     protected Container $container;
@@ -24,6 +24,10 @@ class Application
     protected array $storage = [];
     protected bool $isCliMode = false;
 
+    /**
+     * Initialize a new Application instance
+     * Sets up the container, response, request, and router
+     */
     public function __construct()
     {
         $this->container = Container::getInstance();
@@ -34,13 +38,16 @@ class Application
 
     /**
      * Start the application for web requests
-     * @param string $config_path 
-     * @return void 
+     * Loads configuration and handles the request-response cycle
+     *
+     * @param string $configPath Path to the configuration file
+     * @return void
+     * @throws \Throwable If an error occurs during request handling
      */
-    public function start(string $config_path): void
+    public function start(string $configPath): void
     {
         $this->config = Config::getInstance();
-        $this->config->load($config_path);
+        $this->config->load($configPath);
 
         $this->container->bind('config', $this->config);
         $this->container->bind(\Koala\Application::class, $this);
@@ -57,31 +64,26 @@ class Application
 
     /**
      * Start the application for CLI usage
-     * @param string $config_path 
-     * @return void 
+     * Loads configuration and sets up CLI mode
+     *
+     * @param string $configPath Path to the configuration file
+     * @return void
      */
-    public function startCli(string $config_path): void
+    public function startCli(string $configPath): void
     {
         $this->isCliMode = true;
-        
-        // Load configuration
-        $this->config = Config::getInstance();
-        $this->config->load($config_path);
 
-        // Bind core services to container
+        $this->config = Config::getInstance();
+        $this->config->load($configPath);
+
         $this->container->bind('config', $this->config);
         $this->container->bind(\Koala\Application::class, $this);
-        
-        // Initialize database (but don't create it yet, let it be lazy-loaded)
-        // The createDatabase() method will handle this when needed
-        
-        // Note: We don't initialize Request/Response for CLI as they're HTTP-specific
-        // Controllers running in CLI mode should handle this gracefully
     }
 
     /**
      * Get the dependency injection container
-     * @return Container 
+     *
+     * @return Container The application's container instance
      */
     public function getContainer(): Container
     {
@@ -89,8 +91,9 @@ class Application
     }
 
     /**
-     * Check if running in CLI mode
-     * @return bool 
+     * Check if the application is running in CLI mode
+     *
+     * @return bool True if running in CLI mode, false otherwise
      */
     public function isCliMode(): bool
     {
@@ -98,8 +101,9 @@ class Application
     }
 
     /**
-     * 
-     * @return Router 
+     * Get the router instance
+     *
+     * @return Router The application's router instance
      */
     public function getRouter(): Router
     {
@@ -107,38 +111,58 @@ class Application
     }
 
     /**
-     * 
-     * @return Database 
-     * @throws RuntimeException 
+     * Create and initialize the database manager
+     *
+     * @return DatabaseManager The initialized database manager instance
      */
-    protected function createDatabase(): Database
+    protected function createDatabase(): DatabaseManager
     {
         if ($this->db === null) {
             $config = $this->container->get('config');
-            $this->db = new Database($config->get('database'));
-            $this->container->bind(\Koala\Database\Database::class, $this->db);
+            $this->db = new DatabaseManager($config->get('database'));
+            $this->container->bind(\Koala\Database\DatabaseManager::class, $this->db);
         }
         return $this->db;
     }
-    /**
-     * 
-     * @return void 
-     */
 
+    /**
+     * Get a database connection or the database manager
+     *
+     * @param string|null $connection Name of the database connection to get
+     * @return mixed DatabaseManager instance or specific database connection
+     */
+    public function database(?string $connection = null): mixed
+    {
+        $dbManager = $this->createDatabase();
+
+        if ($connection === null) {
+            return $dbManager;
+        }
+
+        return $dbManager->connection($connection);
+    }
+
+    /**
+     * Create and initialize the session
+     * Only creates session in web mode, not in CLI
+     *
+     * @return void
+     */
     public function createSession(): void
     {
-        // Skip session creation in CLI mode
         if ($this->isCliMode) {
             return;
         }
-        
+
         $session = new Session();
         $this->container->bind(Session::class, $session);
     }
 
     /**
-     * @param string $key 
-     * @return mixed 
+     * Get a configuration value
+     *
+     * @param string $key The configuration key to retrieve
+     * @return mixed The configuration value
      */
     public function getConfig(string $key): mixed
     {
@@ -146,9 +170,11 @@ class Application
     }
 
     /**
-     * @param string $key 
-     * @param mixed $value 
-     * @return Application 
+     * Store a value in the application storage
+     *
+     * @param string $key The storage key
+     * @param mixed $value The value to store
+     * @return self For method chaining
      */
     public function set(string $key, mixed $value): self
     {
@@ -157,8 +183,10 @@ class Application
     }
 
     /**
-     * @param string $key 
-     * @return mixed 
+     * Retrieve a value from the application storage
+     *
+     * @param string $key The storage key to retrieve
+     * @return mixed The stored value or null if not found
      */
     public function get(string $key): mixed
     {
@@ -166,28 +194,30 @@ class Application
     }
 
     /**
-     * @param string $key 
-     * @return bool 
+     * Check if a key exists in the application storage
+     *
+     * @param string $key The storage key to check
+     * @return bool True if the key exists, false otherwise
      */
     public function has(string $key): bool
     {
         return isset($this->storage[$key]);
     }
 
-
     /**
-     * Handle errors differently for CLI vs web
-     * @param Throwable $e 
-     * @return void 
+     * Handle application errors
+     * Throws errors in CLI mode, returns JSON response in web mode
+     *
+     * @param \Throwable $e The exception to handle
+     * @return void
+     * @throws \Throwable In CLI mode
      */
     protected function handleError(\Throwable $e): void
     {
         if ($this->isCliMode) {
-            // For CLI, just throw the exception to be handled by the calling script
             throw $e;
         }
-        
-        // For web requests, send JSON response
+
         $code = (int)($e->getCode()) ?: 500;
         $response = new JsonResponse(
             ['error' => $e->getMessage()],
@@ -197,10 +227,11 @@ class Application
     }
 
     /**
-     * 
-     * @param string $name 
-     * @return mixed 
-     * @throws RuntimeException 
+     * Magic getter for backward compatibility and convenience
+     *
+     * @param string $name The property name to get
+     * @return mixed The requested property value
+     * @throws \RuntimeException If the property doesn't exist
      */
     public function __get(string $name): mixed
     {
@@ -208,7 +239,7 @@ class Application
             'Router' => $this->getRouter(),
             'request' => $this->isCliMode ? null : $this->request,
             'response' => $this->isCliMode ? null : $this->response,
-            'Database', 'database' => $this->createDatabase(),
+            'Database', 'database' => $this->database(),
             default => throw new \RuntimeException("Property $name not found"),
         };
     }

@@ -11,6 +11,10 @@ class Request
     protected Collection $server;
     protected ?Collection $json = null;
 
+    /**
+     * Initialize a new Request instance
+     * Sets up collections for GET, POST, SERVER data and JSON input
+     */
     public function __construct()
     {
         $this->get = new Collection($_GET ?? []);
@@ -26,9 +30,11 @@ class Request
     }
 
     /**
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
+     * Get a query parameter from the GET request
+     * 
+     * @param string $key The parameter name to retrieve
+     * @param mixed $default Default value if parameter is not found
+     * @return mixed The parameter value or default value
      */
     public function getQueryParam(string $key, mixed $default = null): mixed
     {
@@ -36,7 +42,9 @@ class Request
     }
 
     /**
-     * @return Collection
+     * Get all query parameters from the GET request
+     * 
+     * @return Collection Collection of all GET parameters
      */
     public function getQueryParams(): Collection
     {
@@ -44,9 +52,11 @@ class Request
     }
 
     /**
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
+     * Get a parameter from the POST request
+     * 
+     * @param string $key The parameter name to retrieve
+     * @param mixed $default Default value if parameter is not found
+     * @return mixed The parameter value or default value
      */
     public function getPostParam(string $key, mixed $default = null): mixed
     {
@@ -54,7 +64,9 @@ class Request
     }
 
     /**
-     * @return Collection
+     * Get all parameters from the POST request
+     * 
+     * @return Collection Collection of all POST parameters
      */
     public function getPostParams(): Collection
     {
@@ -62,9 +74,11 @@ class Request
     }
 
     /**
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
+     * Get a parameter from the JSON request body
+     * 
+     * @param string $key The parameter name to retrieve
+     * @param mixed $default Default value if parameter is not found
+     * @return mixed The parameter value or default value
      */
     public function getJsonParam(string $key, mixed $default = null): mixed
     {
@@ -72,7 +86,9 @@ class Request
     }
 
     /**
-     * @return Collection|null
+     * Get all parameters from the JSON request body
+     * 
+     * @return Collection|null Collection of all JSON parameters or null if not a JSON request
      */
     public function getJsonParams(): ?Collection
     {
@@ -80,7 +96,11 @@ class Request
     }
 
     /**
-     * @return Collection
+     * Get all parameters based on the request method
+     * Returns GET parameters for GET requests, POST parameters for POST requests,
+     * and JSON parameters for JSON requests
+     * 
+     * @return Collection Collection of all parameters based on request method
      */
     public function getAll(): Collection
     {
@@ -96,8 +116,12 @@ class Request
     }
 
     /**
-     * @param string $key
-     * @return bool
+     * Check if a parameter exists in the request
+     * Checks GET parameters for GET requests, JSON parameters for JSON requests,
+     * and POST parameters for other requests
+     * 
+     * @param string $key The parameter name to check
+     * @return bool True if the parameter exists, false otherwise
      */
     public function has(string $key): bool
     {
@@ -113,7 +137,9 @@ class Request
     }
 
     /**
-     * @return string
+     * Get the HTTP method of the request
+     * 
+     * @return string The HTTP method (GET, POST, PUT, etc.)
      */
     public function getMethod(): string
     {
@@ -121,7 +147,9 @@ class Request
     }
 
     /**
-     * @return string
+     * Get the request route/path
+     * 
+     * @return string The request path without query parameters
      */
     public function getRoute(): string
     {
@@ -129,7 +157,9 @@ class Request
     }
 
     /**
-     * @return bool
+     * Check if the request contains JSON data
+     * 
+     * @return bool True if the request has JSON content type, false otherwise
      */
     public function isJson(): bool
     {

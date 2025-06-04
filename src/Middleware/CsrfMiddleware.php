@@ -8,26 +8,54 @@ use Koala\Utils\Csrf;
 
 class CsrfMiddleware
 {
-	protected $app;
+    public function __construct(
+        protected Application $app,
+        protected Csrf $csrf
+    ) {}
 
-	public function __construct(Application $app, protected Csrf $csrf)
-	{
-		$this->app = $app;
-	}
+    /**
+     * Handle CSRF token verification for state-changing requests
+     */
+    public function handle(Request $request, callable $next): mixed
+    {
+        $method = $request->getMethod();
 
-	public function verifyCsrfToken(Request $request, callable $next)
-	{
-		$method = $request->getMethod();
+        if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
+            $token = $this->getTokenFromRequest($request);
 
-		if ($method === 'POST') {
-			$token = $request->getPostParam('csrf_token');
+            if ($token === null || !$this->csrf->verifyToken($token)) {
+                return $this->app->response->json([
+                    'error' => 'Invalid CSRF token'
+                ], 419);
+            }
+        }
 
-			if (!$this->csrf->verifyToken($token)) {
-				return $this->app->response->json([
-					'error' => 'Unauthorized'
-				], 401);
-			}
-		}
-		return $next();
-	}
+        return $next();
+    }
+
+    /**
+     * Extract CSRF token from request (supports both form and JSON requests)
+     */
+    protected function getTokenFromRequest(Request $request): ?string
+    {
+        $token = $request->getPostParam('csrfToken');
+
+        if ($token === null && $request->isJson()) {
+            $token = $request->getJsonParam('csrfToken');
+        }
+
+        if ($token === null) {
+            $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+        }
+
+        return $token;
+    }
+
+    /**
+     * Alternative method name for backward compatibility
+     */
+    public function verifyCsrfToken(Request $request, callable $next): mixed
+    {
+        return $this->handle($request, $next);
+    }
 }

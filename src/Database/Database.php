@@ -8,17 +8,11 @@ use RuntimeException;
 use Koala\Config\Config;
 use Koala\Utils\Collection;
 
-enum QueryReturnType: string
-{
-    case All = 'all';
-    case Row = 'row';
-    case Field = 'field';
-}
-
 class Database
 {
     protected ?PDO $conn = null;
     protected array $config;
+    protected bool $connectionAttempted = false;
 
     public function __construct(?array $config = null)
     {
@@ -30,13 +24,16 @@ class Database
     }
 
     /**
-     * 
-     * @return PDO 
-     * @throws RuntimeException 
+     * Get the PDO connection instance
+     *
+     * @return PDO
+     * @throws RuntimeException If connection fails
      */
     public function getConnection(): PDO
     {
         if ($this->conn === null) {
+            $this->connectionAttempted = true;
+
             try {
                 $driver = $this->config['driver'] ?? 'mysql';
 
@@ -45,7 +42,7 @@ class Database
                     'pgsql' => $this->getPgSqlDsn(),
                     'sqlite' => $this->getSqliteDsn(),
                     'sqlsrv' => $this->getSqlServerDsn(),
-                    default => throw new \RuntimeException("Unsupported database driver: $driver")
+                    default => throw new RuntimeException("Unsupported database driver: $driver")
                 };
 
                 $options = [
@@ -65,13 +62,45 @@ class Database
                     );
                 }
             } catch (PDOException $e) {
-                throw new \RuntimeException("Database connection failed: " . $e->getMessage());
+                throw new RuntimeException("Database connection failed: " . $e->getMessage());
             }
         }
         return $this->conn;
     }
 
     /**
+     * Check if the database connection is established
+     *
+     * @return bool True if connected, false otherwise
+     */
+    public function isConnected(): bool
+    {
+        return $this->conn !== null;
+    }
+
+    /**
+     * Check if a connection attempt has been made
+     *
+     * @return bool True if connection was attempted, false otherwise
+     */
+    public function connectionAttempted(): bool
+    {
+        return $this->connectionAttempted;
+    }
+
+    /**
+     * Disconnect from the database
+     *
+     * @return void
+     */
+    public function disconnect(): void
+    {
+        $this->conn = null;
+        $this->connectionAttempted = false;
+    }
+
+    /**
+     * Magic method to proxy PDO methods
      *
      * @param string $name Method name
      * @param array $arguments Method arguments
@@ -84,50 +113,84 @@ class Database
     }
 
     /**
-     * @param string $sql 
-     * @param array $params 
-     * @param QueryReturnType|null $returnType
-     * @return mixed 
-     * @throws RuntimeException 
+     * Execute a query with smart return handling
+     * Automatically returns data if the query produces results, otherwise returns execution info
+     *
+     * @param string $sql The SQL query to execute
+     * @param array $params Parameters to bind to the query
+     * @return mixed Query results if data is returned, execution info otherwise
+     * @throws RuntimeException
      */
-    public function runQuery(
-        string $sql,
-        array $params = [],
-        ?QueryReturnType $returnType = null
-    ): mixed {
-        if ($returnType !== null) {
-            return match ($returnType) {
-                QueryReturnType::All => $this->fetchAll($sql, $params),
-                QueryReturnType::Row => $this->fetchRow($sql, $params),
-                QueryReturnType::Field => $this->fetchField($sql, $params),
-            };
-        }
-
+    public function runQuery(string $sql, array $params = []): mixed
+    {
         $statement = $this->getConnection()->prepare($sql);
         $statement->execute($params);
-        return $statement;
+
+        if ($statement->columnCount() > 0) {
+            return $this->handleQueryResults($statement);
+        }
+
+       return [
+            'rowCount' => $statement->rowCount(),
+            'lastInsertId' => $this->getConnection()->lastInsertId() ?: null,
+            'statement' => $statement
+        ];
     }
 
     /**
-     * 
-     * @param string $sql 
-     * @param array $params 
-     * @return mixed 
-     * @throws RuntimeException 
-     * @throws PDOException 
+     * Handle results from queries that return data
+     *
+     * @param \PDOStatement $statement The executed statement
+     * @return mixed Appropriate return data based on result count and structure
+     */
+    protected function handleQueryResults(\PDOStatement $statement): mixed
+    {
+        $results = $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($results)) {
+            // Query returned columns but no rows
+            return [];
+        }
+
+        if (count($results) === 1) {
+            $row = $results[0];
+
+            // If single row with single column, return just the value
+            if (count($row) === 1) {
+                return reset($row);
+            }
+
+            // Single row with multiple columns, return as Collection
+            return new Collection($row);
+        }
+
+        // Multiple rows, return array of Collections
+        return array_map(fn($row) => new Collection($row), $results);
+    }
+
+    /**
+     * Fetch a single field value from the first row
+     *
+     * @param string $sql The SQL query to execute
+     * @param array $params Parameters to bind to the query
+     * @return mixed The field value or null if no results
+     * @throws RuntimeException
+     * @throws PDOException
      */
     public function fetchField(string $sql, array $params = []): mixed
     {
-        $statement = $this->runQuery($sql, $params);
+        $statement = $this->getConnection()->prepare($sql);
+        $statement->execute($params);
         $result = $statement->fetch(PDO::FETCH_ASSOC);
         return $result ? reset($result) : null;
     }
 
     /**
-     * 
-     * @param string $sql 
-     * @param array $params 
-     * @return Collection|null 
+     * Fetch a single row as a Collection
+     *
+     * @param string $sql The SQL query to execute
+     * @param array $params Parameters to bind to the query
+     * @return Collection|null The row as a Collection or null if no results
      */
     public function fetchRow(string $sql, array $params = []): ?Collection
     {
@@ -139,14 +202,16 @@ class Database
     }
 
     /**
-     * 
-     * @param string $sql 
-     * @param array $params 
-     * @return array 
+     * Fetch all rows as an array of Collections
+     *
+     * @param string $sql The SQL query to execute
+     * @param array $params Parameters to bind to the query
+     * @return array Array of Collection objects representing rows
      */
     public function fetchAll(string $sql, array $params = []): array
     {
-        $statement = $this->runQuery($sql, $params);
+        $statement = $this->getConnection()->prepare($sql);
+        $statement->execute($params);
 
         $results = $statement->fetchAll();
 
@@ -161,8 +226,9 @@ class Database
     }
 
     /**
-     * 
-     * @return string 
+     * Generate MySQL DSN string
+     *
+     * @return string The MySQL DSN
      */
     protected function getMySqlDsn(): string
     {
@@ -176,8 +242,9 @@ class Database
     }
 
     /**
-     * 
-     * @return string 
+     * Generate PostgreSQL DSN string
+     *
+     * @return string The PostgreSQL DSN
      */
     protected function getPgSqlDsn(): string
     {
@@ -190,8 +257,9 @@ class Database
     }
 
     /**
-     * 
-     * @return string 
+     * Generate SQLite DSN string
+     *
+     * @return string The SQLite DSN
      */
     protected function getSqliteDsn(): string
     {
@@ -202,8 +270,9 @@ class Database
     }
 
     /**
-     * 
-     * @return string 
+     * Generate SQL Server DSN string
+     *
+     * @return string The SQL Server DSN
      */
     protected function getSqlServerDsn(): string
     {

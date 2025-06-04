@@ -8,8 +8,10 @@ class Config
     protected $settings = [];
 
     /**
-     * 
-     * @return Config 
+     * Get the singleton instance of the Config class
+     * Ensures only one instance exists throughout the application
+     *
+     * @return Config The singleton instance
      */
     public static function getInstance() : Config
     {
@@ -20,20 +22,24 @@ class Config
     }
 
     /**
-     * 
-     * @param string $config_path 
-     * @return void 
+     * Load configuration settings from a PHP file
+     * The file should return an array of configuration values
+     *
+     * @param string $configPath Path to the configuration file
+     * @return void
      */
-    public function load(string $config_path): void
+    public function load(string $configPath): void
     {
-        $this->settings = require $config_path;
+        $this->settings = require $configPath;
     }
 
     /**
-     * 
-     * @param string $key 
-     * @param mixed|null $default 
-     * @return mixed 
+     * Retrieve a configuration value using dot notation
+     * Returns the default value if the key is not found
+     *
+     * @param string $key The configuration key (dot notation supported)
+     * @param mixed|null $default The default value to return if the key is not found
+     * @return mixed The configuration value or default
      */
     public function get(string $key, mixed $default = null) : mixed
     {

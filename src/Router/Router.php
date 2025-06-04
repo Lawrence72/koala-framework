@@ -12,192 +12,166 @@ use RuntimeException;
 class Router implements RouterInterface
 {
     protected array $routes = [];
-    protected array $current_group = [];
+    protected array $currentGroup = [];
     protected Container $container;
 
+    // Caching properties
+    protected array $staticRoutes = [];
+    protected array $dynamicRoutes = [];
+    protected bool $cacheBuilt = false;
+
+    /**
+     * Initialize a new Router instance
+     * Sets up the container for dependency injection
+     */
     public function __construct()
     {
         $this->container = Container::getInstance();
     }
 
     /**
-     * 
-     * @param string $path 
-     * @param callable $callback 
-     * @param array $middleware 
-     * @return void 
+     * Group routes with common path prefix and middleware
+     *
+     * @param string $path Common path prefix for the group
+     * @param callable $callback Function containing route definitions
+     * @param array $middleware Array of middleware classes to apply to all routes in group
+     * @return void
      */
     public function group(string $path, callable $callback, array $middleware = []): void
     {
-        $previous_group = $this->current_group;
+        $previousGroup = $this->currentGroup;
 
         // Flatten any nested arrays in middleware
-        $flattened_middleware = [];
+        $flattenedMiddleware = [];
         foreach ($middleware as $m) {
             if (is_array($m)) {
-                $flattened_middleware = array_merge($flattened_middleware, $m);
+                $flattenedMiddleware = array_merge($flattenedMiddleware, $m);
             } else {
-                $flattened_middleware[] = $m;
+                $flattenedMiddleware[] = $m;
             }
         }
 
-        $this->current_group = array_merge($previous_group, [
-            'path' => ($previous_group['path'] ?? '') . $path,
+        $this->currentGroup = array_merge($previousGroup, [
+            'path' => ($previousGroup['path'] ?? '') . $path,
             'middleware' => array_merge(
-                $previous_group['middleware'] ?? [], $flattened_middleware
+                $previousGroup['middleware'] ?? [],
+                $flattenedMiddleware
             )
         ]);
 
         $callback($this);
 
-        $this->current_group = $previous_group;
+        $this->currentGroup = $previousGroup;
+
+        // Invalidate cache when routes change
+        $this->cacheBuilt = false;
     }
 
     /**
-     * 
-     * @param string $method 
-     * @param string $path 
-     * @param string $controller_class 
-     * @param string $action 
-     * @return void 
+     * Add a new route to the router
+     *
+     * @param string $method HTTP method (GET, POST, etc.)
+     * @param string $path URL path pattern
+     * @param string $controllerClass Fully qualified class name of the controller
+     * @param string $action Name of the controller method to call
+     * @return void
      */
-    public function addRoute(string $method, string $path, string $controller_class, string $action): void
+    public function addRoute(string $method, string $path, string $controllerClass, string $action): void
     {
-        if (isset($this->current_group['path'])) {
-            $path = '/' . ltrim($this->current_group['path'], '/') . $path;
+        if (isset($this->currentGroup['path'])) {
+            $path = '/' . ltrim($this->currentGroup['path'], '/') . $path;
         }
 
         $pattern = preg_replace_callback(
             '#@(\w+)(?::([^/]+))?#',
             function ($matches) {
-                $param_name = $matches[1];
-                $regex_pattern = $matches[2] ?? '[^/]+';
-                return sprintf('(?P<%s>%s)', $param_name, $regex_pattern);
+                $paramName = $matches[1];
+                $regexPattern = $matches[2] ?? '[^/]+';
+                return sprintf('(?P<%s>%s)', $paramName, $regexPattern);
             },
             $path
         );
 
         $pattern = '^' . ltrim($pattern, '/') . '/?$';
 
-        $route_info = [
-            'controller' => $controller_class,
+        $routeInfo = [
+            'controller' => $controllerClass,
             'action' => $action,
             'original_path' => $path,
-            'middleware' => $this->current_group['middleware'] ?? []
+            'middleware' => $this->currentGroup['middleware'] ?? []
         ];
 
-        $this->routes[$method][$pattern] = $route_info;
+        $this->routes[$method][$pattern] = $routeInfo;
+
+        // Invalidate cache when routes change
+        $this->cacheBuilt = false;
     }
 
     /**
-     * 
-     * @param string $method 
-     * @param string $path 
-     * @return mixed 
-     * @throws RuntimeException 
+     * Build the route cache for faster lookups
+     * Separates routes into static and dynamic for optimized matching
+     *
+     * @return void
+     */
+    protected function buildRouteCache(): void
+    {
+        if ($this->cacheBuilt) {
+            return;
+        }
+
+        $this->staticRoutes = [];
+        $this->dynamicRoutes = [];
+
+        foreach ($this->routes as $method => $routes) {
+            $this->staticRoutes[$method] = [];
+            $this->dynamicRoutes[$method] = [];
+
+            foreach ($routes as $pattern => $routeInfo) {
+                $originalPath = $routeInfo['original_path'];
+                $cleanPath = ltrim($originalPath, '/');
+
+                // Check if route is static (no parameters)
+                if (strpos($originalPath, '@') === false) {
+                    // Static route - direct lookup
+                    $this->staticRoutes[$method][$cleanPath] = $routeInfo;
+
+                    // Also handle with trailing slash
+                    $this->staticRoutes[$method][$cleanPath . '/'] = $routeInfo;
+                } else {
+                    // Dynamic route - needs regex matching
+                    $this->dynamicRoutes[$method][$pattern] = $routeInfo;
+                }
+            }
+        }
+
+        $this->cacheBuilt = true;
+    }
+
+    /**
+     * Dispatch a request to the appropriate route handler
+     *
+     * @param string $method HTTP method of the request
+     * @param string $path URL path of the request
+     * @return mixed Response from the route handler
+     * @throws RuntimeException If no matching route is found
      */
     public function dispatch(string $method, string $path): mixed
     {
-        $path = ltrim($path, '/');
+        // Build cache if needed
+        $this->buildRouteCache();
 
-        foreach ($this->routes[$method] ?? [] as $pattern => $route) {
-            if (preg_match('#' . $pattern . '#', $path, $matches)) {
-                $controller_class = $route['controller'];
-                $action = $route['action'];
+        $cleanPath = ltrim($path, '/');
 
-                $request = new Request();
+        // Step 1: Try static route lookup (fastest)
+        if (isset($this->staticRoutes[$method][$cleanPath])) {
+            return $this->executeRoute($this->staticRoutes[$method][$cleanPath], []);
+        }
 
-                $controller_action = function () use ($controller_class, $action, $matches) {
-                    if (!class_exists($controller_class)) {
-                        throw new \RuntimeException("Controller class '$controller_class' not found", 500);
-                    }
-
-                    $controller = $this->container->get($controller_class);
-
-                    if (!$controller) {
-                        $reflection = new \ReflectionClass($controller_class);
-                        $constructor = $reflection->getConstructor();
-
-                        if ($constructor) {
-                            $params = [];
-
-                            foreach ($constructor->getParameters() as $param) {
-                                $param_class = $param->getType()->getName();
-                                $dependency = $this->container->get($param_class);
-
-                                if (!$dependency && !$param->isOptional()) {
-                                    throw new \RuntimeException("Could not find dependency {$param_class} for controller {$controller_class}");
-                                }
-
-                                $params[] = $dependency;
-                            }
-
-                            $controller = new $controller_class(...$params);
-                        } else {
-                            $controller = new $controller_class();
-                        }
-                    }
-
-                    if (!method_exists($controller, $action)) {
-                        throw new \RuntimeException("Action '$action' not found in controller '$controller_class'", 500);
-                    }
-
-                    $params = array_filter($matches, fn($key) => is_string($key), ARRAY_FILTER_USE_KEY);
-
-                    $arguments = $this->findMethodArguments($controller_class, $action, $params);
-
-                    return $controller->$action(...$arguments);
-                };
-
-                if (!empty($route['middleware'])) {
-                    $stack = $controller_action;
-
-                    foreach ($route['middleware'] as $middleware_class) {
-                        if (!class_exists($middleware_class)) {
-                            throw new \RuntimeException("Middleware class '$middleware_class' not found");
-                        }
-
-                        $middleware_instance = $this->container->get($middleware_class);
-
-                        if (!$middleware_instance) {
-                            $reflection = new \ReflectionClass($middleware_class);
-                            $constructor = $reflection->getConstructor();
-
-                            if ($constructor) {
-                                $params = [];
-                                foreach ($constructor->getParameters() as $param) {
-                                    $param_class = $param->getType()->getName();
-                                    $dependency = $this->container->get($param_class);
-
-                                    if (!$dependency && !$param->isOptional()) {
-                                        throw new \RuntimeException("Could not find dependency {$param_class} for middleware {$middleware_class}");
-                                    }
-                                    $params[] = $dependency;
-                                }
-                                $middleware_instance = new $middleware_class(...$params);
-                            } else {
-                                $middleware_instance = new $middleware_class();
-                            }
-                        }
-
-                        if (!method_exists($middleware_instance, 'handle')) {
-                            throw new \RuntimeException("Middleware method 'handle' not found in class '$middleware_class'");
-                        }
-
-                        $current_stack = $stack;
-                        $stack = fn() => $middleware_instance->handle($request, $current_stack);
-                    }
-
-                    $response = $stack();
-
-                    if ($response instanceof Response) {
-                        return $response;
-                    }
-
-                    return $response;
-                }
-
-                return $controller_action();
+        // Step 2: Try dynamic route matching (slower, but only for dynamic routes)
+        foreach ($this->dynamicRoutes[$method] ?? [] as $pattern => $route) {
+            if (preg_match('#' . $pattern . '#', $cleanPath, $matches)) {
+                $params = array_filter($matches, fn($key) => is_string($key), ARRAY_FILTER_USE_KEY);
+                return $this->executeRoute($route, $params);
             }
         }
 
@@ -205,38 +179,204 @@ class Router implements RouterInterface
     }
 
     /**
-     * 
-     * @param string $controller_class 
-     * @param string $action 
-     * @param array $route_params 
-     * @return array 
-     * @throws InvalidArgumentException 
+     * Execute a matched route with its middleware chain
+     *
+     * @param array $route Route information including controller and middleware
+     * @param array $params Route parameters extracted from the URL
+     * @return mixed Response from the route handler
+     * @throws RuntimeException If controller or middleware setup fails
      */
-    protected function findMethodArguments(string $controller_class, string $action, array $route_params): array
+    protected function executeRoute(array $route, array $params): mixed
     {
-        $reflection = new ReflectionMethod($controller_class, $action);
+        $controllerClass = $route['controller'];
+        $action = $route['action'];
+        $request = new Request();
+
+        $controllerAction = function () use ($controllerClass, $action, $params) {
+            if (!class_exists($controllerClass)) {
+                throw new \RuntimeException("Controller class '$controllerClass' not found", 500);
+            }
+
+            $controller = $this->container->get($controllerClass);
+
+            if (!$controller) {
+                $reflection = new \ReflectionClass($controllerClass);
+                $constructor = $reflection->getConstructor();
+
+                if ($constructor) {
+                    $constructorParams = [];
+
+                    foreach ($constructor->getParameters() as $param) {
+                        $paramClass = $param->getType()->getName();
+                        $dependency = $this->container->get($paramClass);
+
+                        if (!$dependency && !$param->isOptional()) {
+                            throw new \RuntimeException("Could not find dependency {$paramClass} for controller {$controllerClass}");
+                        }
+
+                        $constructorParams[] = $dependency;
+                    }
+
+                    $controller = new $controllerClass(...$constructorParams);
+                } else {
+                    $controller = new $controllerClass();
+                }
+            }
+
+            if (!method_exists($controller, $action)) {
+                throw new \RuntimeException("Action '$action' not found in controller '$controllerClass'", 500);
+            }
+
+            $arguments = $this->findMethodArguments($controllerClass, $action, $params);
+
+            return $controller->$action(...$arguments);
+        };
+
+        // Handle middleware
+        if (!empty($route['middleware'])) {
+            $stack = $controllerAction;
+
+            foreach ($route['middleware'] as $middlewareClass) {
+                if (!class_exists($middlewareClass)) {
+                    throw new \RuntimeException("Middleware class '$middlewareClass' not found");
+                }
+
+                $middlewareInstance = $this->container->get($middlewareClass);
+
+                if (!$middlewareInstance) {
+                    $reflection = new \ReflectionClass($middlewareClass);
+                    $constructor = $reflection->getConstructor();
+
+                    if ($constructor) {
+                        $middlewareParams = [];
+                        foreach ($constructor->getParameters() as $param) {
+                            $paramClass = $param->getType()->getName();
+                            $dependency = $this->container->get($paramClass);
+
+                            if (!$dependency && !$param->isOptional()) {
+                                throw new \RuntimeException("Could not find dependency {$paramClass} for middleware {$middlewareClass}");
+                            }
+                            $middlewareParams[] = $dependency;
+                        }
+                        $middlewareInstance = new $middlewareClass(...$middlewareParams);
+                    } else {
+                        $middlewareInstance = new $middlewareClass();
+                    }
+                }
+
+                if (!method_exists($middlewareInstance, 'handle')) {
+                    throw new \RuntimeException("Middleware method 'handle' not found in class '$middlewareClass'");
+                }
+
+                $currentStack = $stack;
+                $stack = fn() => $middlewareInstance->handle($request, $currentStack);
+            }
+
+            return $stack();
+        }
+
+        return $controllerAction();
+    }
+
+    /**
+     * Clear the route cache
+     * Forces rebuilding of the cache on next dispatch
+     *
+     * @return void
+     */
+    public function clearCache(): void
+    {
+        $this->cacheBuilt = false;
+        $this->staticRoutes = [];
+        $this->dynamicRoutes = [];
+    }
+
+    /**
+     * Get statistics about the route cache
+     *
+     * @return array Cache statistics including counts of static and dynamic routes
+     */
+    public function getCacheStats(): array
+    {
+        $stats = [
+            'total_routes' => 0,
+            'static_routes' => 0,
+            'dynamic_routes' => 0,
+            'methods' => []
+        ];
+
+        foreach ($this->routes as $method => $routes) {
+            $stats['methods'][$method] = [
+                'total' => count($routes),
+                'static' => count($this->staticRoutes[$method] ?? []),
+                'dynamic' => count($this->dynamicRoutes[$method] ?? [])
+            ];
+            $stats['total_routes'] += count($routes);
+            $stats['static_routes'] += count($this->staticRoutes[$method] ?? []);
+            $stats['dynamic_routes'] += count($this->dynamicRoutes[$method] ?? []);
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Find the arguments for a controller method
+     *
+     * @param string $controllerClass The controller class name
+     * @param string $action The action method name
+     * @param array $routeParams Route parameters from the URL
+     * @return array Arguments to pass to the controller method
+     */
+    protected function findMethodArguments(string $controllerClass, string $action, array $routeParams): array
+    {
+        $reflection = new ReflectionMethod($controllerClass, $action);
         $arguments = [];
 
         foreach ($reflection->getParameters() as $param) {
-            $paramName = strtolower($param->getName());
+            $name = $param->getName();
+            $type = $param->getType();
 
-            match ($paramName) {
-                'request' => $arguments[] = new Request(),
-                'response' => $arguments[] = new Response(),
-                'args' => $arguments[] = $route_params,
-                default => $arguments[] = null
-            };
+            if (isset($routeParams[$name])) {
+                $arguments[] = $routeParams[$name];
+            } elseif ($type && !$type->isBuiltin()) {
+                $typeName = $type->getName();
+                $dependency = $this->container->get($typeName);
+                if ($dependency) {
+                    $arguments[] = $dependency;
+                } elseif ($param->isOptional()) {
+                    $arguments[] = $param->getDefaultValue();
+                } else {
+                    throw new \RuntimeException("Could not resolve dependency {$typeName} for {$controllerClass}::{$action}");
+                }
+            } elseif ($param->isOptional()) {
+                $arguments[] = $param->getDefaultValue();
+            } else {
+                throw new \RuntimeException("Required parameter {$name} not provided for {$controllerClass}::{$action}");
+            }
         }
 
         return $arguments;
     }
 
     /**
-     * 
-     * @return array 
+     * List all registered routes
+     *
+     * @return array Array of all registered routes with their methods and paths
      */
     public function listRoutes(): array
     {
-        return $this->routes;
+        $routes = [];
+        foreach ($this->routes as $method => $methodRoutes) {
+            foreach ($methodRoutes as $pattern => $route) {
+                $routes[] = [
+                    'method' => $method,
+                    'path' => $route['original_path'],
+                    'controller' => $route['controller'],
+                    'action' => $route['action'],
+                    'middleware' => $route['middleware']
+                ];
+            }
+        }
+        return $routes;
     }
 }
